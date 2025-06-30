@@ -249,10 +249,13 @@
         // Mapbox access token
         mapboxgl.accessToken = 'pk.eyJ1IjoiaW9ub25ob3Byb2JsZW1pIiwiYSI6ImNtYnFvd3FzYzAxZ24ybHNkM2dkaW1kMHgifQ.-OzW5g8GVEnGhj3S5JMGdQ';
         
-        // Initialize map centered on Ascoli Piceno, Italy
+        // Custom map style
+        const MAP_STYLE = 'mapbox://styles/iononhoproblemi/cm9v60wy9000z01qq3nhhecur';
+        
+        // Initialize map centered on Ascoli Piceno, Italy with custom style
         const map = new mapboxgl.Map({
             container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v11',
+            style: MAP_STYLE,
             center: [13.574, 42.854], // Ascoli Piceno, Italy
             zoom: 14,
             pitch: 45,
