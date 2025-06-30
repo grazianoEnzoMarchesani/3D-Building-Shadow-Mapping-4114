@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Shadows - Interactive Sun Simulation</title>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <script src='https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js'></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            overflow: hidden;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100vh;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            min-width: 280px;
+            z-index: 1000;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .control-panel h3 {
+            margin-bottom: 16px;
+            color: #2c3e50;
+            font-size: 18px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #34495e;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .control-group input[type="date"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            transition: border-color 0.3s ease;
+        }
+
+        .control-group input[type="date"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .slider-container {
+            position: relative;
+            margin-top: 8px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(to right, #2c3e50 0%, #f39c12 25%, #e74c3c 50%, #f39c12 75%, #2c3e50 100%);
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3498db;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.6);
+        }
+
+        .control-group input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3498db;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.4);
+        }
+
+        .time-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 14px;
+            margin-top: 16px;
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .hour-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #7f8c8d;
+            margin-top: 4px;
+            padding: 0 2px;
+        }
+
+        .sun-info {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 12px;
+            font-size: 12px;
+            color: #2c3e50;
+        }
+
+        .sun-info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .sun-info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            z-index: 999;
+        }
+
+        @media (max-width: 768px) {
+            .control-panel {
+                top: 10px;
+                right: 10px;
+                left: 10px;
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="loading" id="loading">Loading map...</div>
+    
+    <div class="control-panel">
+        <h3>☀️ Sun Position Control</h3>
+        
+        <div class="control-group">
+            <label for="date-picker">Date:</label>
+            <input type="date" id="date-picker" />
+        </div>
+        
+        <div class="control-group">
+            <label for="time-slider">Time of Day:</label>
+            <div class="slider-container">
+                <input type="range" id="time-slider" min="0" max="23" value="12" step="0.5" />
+                <div class="hour-labels">
+                    <span>00:00</span>
+                    <span>06:00</span>
+                    <span>12:00</span>
+                    <span>18:00</span>
+                    <span>24:00</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="time-display" id="time-display">
+            October 26, 2023 - 12:00
+        </div>
+        
+        <div class="sun-info" id="sun-info">
+            <div class="sun-info-row">
+                <span>Altitude:</span>
+                <span id="sun-altitude">--°</span>
+            </div>
+            <div class="sun-info-row">
+                <span>Azimuth:</span>
+                <span id="sun-azimuth">--°</span>
+            </div>
+            <div class="sun-info-row">
+                <span>Status:</span>
+                <span id="sun-status">Day</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state for current date/time
+        window.currentDate = new Date();
+        
+        // Mapbox access token
+        mapboxgl.accessToken = 'pk.eyJ1IjoiaW9ub25ob3Byb2JsZW1pIiwiYSI6ImNtYnFvd3FzYzAxZ24ybHNkM2dkaW1kMHgifQ.-OzW5g8GVEnGhj3S5JMGdQ';
+        
+        // Initialize map
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [-74.006, 40.7128], // New York City
+            zoom: 15.5,
+            pitch: 45,
+            bearing: -17.6,
+            antialias: true
+        });
+
+        // Custom WebGL layer for building shadows
+        class BuildingShadows {
+            constructor() {
+                this.id = 'building-shadows';
+                this.type = 'custom';
+            }
+            
+            onAdd(map, gl) {
+                this.map = map;
+                const vertexSource = `
+uniform mat4 u_matrix;
+uniform float u_height_factor;
+uniform float u_altitude;
+uniform float u_azimuth;
+attribute vec4 a_pos_normal_ed;
+attribute lowp vec2 a_base;
+attribute lowp vec2 a_height;
+void main() {
+    float base = max(0.0, a_base.x);
+    float height = max(0.0, a_height.x);
+    vec4 pos_nx = floor(a_pos_normal_ed * 0.5);
+    vec4 top_up_ny_start = a_pos_normal_ed - 2.0 * pos_nx;
+    vec3 top_up_ny = top_up_ny_start.xyz;
+    float t = top_up_ny.x;
+    vec4 pos = vec4(pos_nx.xy, t > 0.0 ? height : base, 1);
+    float len = pos.z * u_height_factor / tan(u_altitude);
+    pos.x += cos(u_azimuth) * len;
+    pos.y += sin(u_azimuth) * len;
+    pos.z = 0.0;
+    gl_Position = u_matrix * pos;
+}
+`;
+                const fragmentSource = `
+void main() {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+}
+`;
+                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vertexSource);
+                gl.compileShader(vertexShader);
+                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fragmentSource);
+                gl.compileShader(fragmentShader);
+                this.program = gl.createProgram();
+                gl.attachShader(this.program, vertexShader);
+                gl.attachShader(this.program, fragmentShader);
+                gl.linkProgram(this.program);
+                gl.validateProgram(this.program);
+                this.uMatrix = gl.getUniformLocation(this.program, "u_matrix");
+                this.uHeightFactor = gl.getUniformLocation(this.program, "u_height_factor");
+                this.uAltitude = gl.getUniformLocation(this.program, "u_altitude");
+                this.uAzimuth = gl.getUniformLocation(this.program, "u_azimuth");
+                this.aPosNormalEd = gl.getAttribLocation(this.program, "a_pos_normal_ed");
+                this.aBase = gl.getAttribLocation(this.program, "a_base");
+                this.aHeight = gl.getAttribLocation(this.program, "a_height");
+                this.compileOpacityProgram(map, gl);
+            }
+            
+            compileOpacityProgram(map, gl) {
+                const vertexSource = `
+attribute vec2 a_pos;
+varying vec2 v_pos;
+void main() {
+    v_pos = a_pos * 0.5 + 0.5;
+    gl_Position = vec4(a_pos, 0, 1);
+}
+`;
+                const fragmentSource = `
+        precision mediump float;
+        uniform sampler2D u_tex;
+        uniform float u_alt;
+        uniform vec4 u_shadeColor;
+        varying vec2 v_pos;
+void main() {
+    if (u_alt < 0.0) {
+        gl_FragColor = u_shadeColor;
+    } else {
+        vec4 color = texture2D(u_tex, v_pos);
+        if (color == vec4(0, 0, 0, 0)) {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        } else {
+            gl_FragColor = u_shadeColor;
+        }
+    }
+}
+`;
+                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vertexSource);
+                gl.compileShader(vertexShader);
+                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fragmentSource);
+                gl.compileShader(fragmentShader);
+                this.opacityProgram = gl.createProgram();
+                gl.attachShader(this.opacityProgram, vertexShader);
+                gl.attachShader(this.opacityProgram, fragmentShader);
+                gl.linkProgram(this.opacityProgram);
+                gl.validateProgram(this.opacityProgram);
+                this.aPos = gl.getAttribLocation(this.opacityProgram, "a_pos");
+                this.uTex = gl.getUniformLocation(this.opacityProgram, "u_tex");
+                this.uAlt = gl.getUniformLocation(this.opacityProgram, "u_alt");
+                this.uMatrix2 = gl.getUniformLocation(this.opacityProgram, "u_matrix");
+                this.shadeColor = gl.getUniformLocation(this.opacityProgram, "u_shadeColor");
+                const [x, y, vWidth, vHeight] = gl.getParameter(gl.VIEWPORT);
+                this.buf = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+                const screen = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+                gl.bufferData(gl.ARRAY_BUFFER, screen, gl.STATIC_DRAW);
+                this.tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, this.tex);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, vWidth, vHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                this.fb = gl.createFramebuffer();
+                this.attachmentPoint = gl.COLOR_ATTACHMENT0
+            }
+            
+            render(gl, matrix) {
+                gl.useProgram(this.program);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.fb);
+                gl.activeTexture(gl.TEXTURE_0);
+                gl.bindTexture(gl.TEXTURE_2D, this.tex);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, this.attachmentPoint, gl.TEXTURE_2D, this.tex, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                const source = this.map.style._sourceCaches['other:composite'];
+                const coords = source.getVisibleCoordinates().reverse();
+                const buildingsLayer = map.getLayer('3d-buildings');
+                const context = this.map.painter.context;
+                const { lng, lat } = this.map.getCenter();
+                const pos = SunCalc.getPosition(window.currentDate, lat, lng);
+                gl.uniform1f(this.uAltitude, pos.altitude);
+                gl.uniform1f(this.uAzimuth, pos.azimuth + 3 * Math.PI / 2);
+                map.setLight({
+                    anchor: 'map',
+                    position: [1.5, 180 + pos.azimuth * 180 / Math.PI, 90 - pos.altitude * 180 / Math.PI],
+                    'position-transition': { duration: 0 },
+                    color: pos.altitude < 0 ? '#999999' : '#FFFFFF'
+                });
+                
+                // Update UI with sun position info
+                updateSunInfo(pos);
+                
+                for (const coord of coords) {
+                    const tile = source.getTile(coord);
+                    if (!tile) continue;
+                    const bucket = tile.getBucket(buildingsLayer);
+                    if (!bucket) continue;
+                    const [heightBuffer, baseBuffer] = bucket.programConfigurations.programConfigurations['3d-buildings']._buffers;
+                    gl.uniformMatrix4fv(this.uMatrix, false, coord.projMatrix);
+                    gl.uniformMatrix4fv(this.uMatrix2, false, coord.projMatrix);
+                    gl.uniform1f(this.uHeightFactor, Math.pow(2, coord.overscaledZ) / tile.tileSize / 8);
+                    for (const segment of bucket.segments.get()) {
+                        const numPrevAttrib = context.currentNumAttributes || 0;
+                        const numNextAttrib = 2;
+                        for (let i = numNextAttrib; i < numPrevAttrib; i++) gl.disableVertexAttribArray(i);
+                        const vertexOffset = segment.vertexOffset || 0;
+                        gl.enableVertexAttribArray(this.aPosNormalEd);
+                        gl.enableVertexAttribArray(this.aHeight);
+                        gl.enableVertexAttribArray(this.aBase);
+                        bucket.layoutVertexBuffer.bind();
+                        gl.vertexAttribPointer(this.aPosNormalEd, 4, gl.SHORT, false, 8, 8 * vertexOffset);
+                        heightBuffer.bind();
+                        gl.vertexAttribPointer(this.aHeight, 1, gl.FLOAT, false, 4, 4 * vertexOffset);
+                        baseBuffer.bind();
+                        gl.vertexAttribPointer(this.aBase, 1, gl.FLOAT, false, 4, 4 * vertexOffset);
+                        bucket.indexBuffer.bind();
+                        context.currentNumAttributes = numNextAttrib;
+                        gl.drawElements(gl.TRIANGLES, segment.primitiveLength * 3, gl.UNSIGNED_SHORT, segment.primitiveOffset * 3 * 2);
+                    }
+                }
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.useProgram(this.opacityProgram);
+                gl.uniform1f(this.uAlt, pos.altitude);
+                gl.uniform4fv(this.shadeColor, new Float32Array([0, 0, 0, 0.6]))
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+                gl.enableVertexAttribArray(this.aPos);
+                gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 0, 0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            }
+        }
+
+        // Initialize UI elements
+        const datePickerElement = document.getElementById('date-picker');
+        const timeSliderElement = document.getElementById('time-slider');
+        const timeDisplayElement = document.getElementById('time-display');
+        const loadingElement = document.getElementById('loading');
+
+        // Set initial date to today
+        const today = new Date();
+        datePickerElement.value = today.toISOString().split('T')[0];
+        window.currentDate = new Date(today);
+
+        // Update time display
+        function updateTimeDisplay() {
+            const options = { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric'
+            };
+            const dateStr = window.currentDate.toLocaleDateString('en-US', options);
+            const hours = Math.floor(parseFloat(timeSliderElement.value));
+            const minutes = Math.round((parseFloat(timeSliderElement.value) - hours) * 60);
+            const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            timeDisplayElement.textContent = `${dateStr} - ${timeStr}`;
+        }
+
+        // Update sun information in UI
+        function updateSunInfo(pos) {
+            const altitudeDeg = (pos.altitude * 180 / Math.PI).toFixed(1);
+            const azimuthDeg = (pos.azimuth * 180 / Math.PI).toFixed(1);
+            const status = pos.altitude > 0 ? 'Day' : 'Night';
+            
+            document.getElementById('sun-altitude').textContent = `${altitudeDeg}°`;
+            document.getElementById('sun-azimuth').textContent = `${azimuthDeg}°`;
+            document.getElementById('sun-status').textContent = status;
+        }
+
+        // Date picker change handler
+        datePickerElement.addEventListener('change', function() {
+            const selectedDate = new Date(this.value);
+            const currentHour = parseFloat(timeSliderElement.value);
+            selectedDate.setHours(Math.floor(currentHour));
+            selectedDate.setMinutes(Math.round((currentHour - Math.floor(currentHour)) * 60));
+            window.currentDate = selectedDate;
+            updateTimeDisplay();
+            if (map.loaded()) {
+                map.triggerRepaint();
+            }
+        });
+
+        // Time slider change handler
+        timeSliderElement.addEventListener('input', function() {
+            const hour = parseFloat(this.value);
+            window.currentDate.setHours(Math.floor(hour));
+            window.currentDate.setMinutes(Math.round((hour - Math.floor(hour)) * 60));
+            updateTimeDisplay();
+            if (map.loaded()) {
+                map.triggerRepaint();
+            }
+        });
+
+        // Map load event
+        map.on('load', function() {
+            // Hide loading indicator
+            loadingElement.style.display = 'none';
+            
+            // Add 3D buildings layer
+            const layers = map.getStyle().layers;
+            const labelLayerId = layers.find(
+                (layer) => layer.type === 'symbol' && layer.layout['text-field']
+            ).id;
+
+            map.addLayer({
+                'id': '3d-buildings',
+                'source': 'composite',
+                'source-layer': 'building',
+                'filter': ['==', 'extrude', 'true'],
+                'type': 'fill-extrusion',
+                'minzoom': 15,
+                'paint': {
+                    'fill-extrusion-color': '#aaa',
+                    'fill-extrusion-height': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        15,
+                        0,
+                        15.05,
+                        ['get', 'height']
+                    ],
+                    'fill-extrusion-base': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        15,
+                        0,
+                        15.05,
+                        ['get', 'min_height']
+                    ],
+                    'fill-extrusion-opacity': 0.6
+                }
+            }, labelLayerId);
+
+            // Add custom shadow layer
+            map.addLayer(new BuildingShadows());
+            
+            // Initial time display update
+            updateTimeDisplay();
+        });
+
+        // Handle map errors
+        map.on('error', function(e) {
+            console.error('Map error:', e);
+            loadingElement.textContent = 'Error loading map. Please refresh the page.';
+        });
+
+        // Add navigation controls
+        map.addControl(new mapboxgl.NavigationControl());
+        
+        // Add fullscreen control
+        map.addControl(new mapboxgl.FullscreenControl());
+
+        // Initial update
+        updateTimeDisplay();
+    </script>
+</body>
+</html>
