@@ -6,6 +6,7 @@
     <title>Building Shadows - Interactive Sun Simulation</title>
     <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" type="text/css">
     <script src='https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js'></script>
     <style>
         * {
@@ -169,12 +170,27 @@
             z-index: 999;
         }
 
+        /* Geocoder styling */
+        .mapboxgl-ctrl-geocoder {
+            min-width: 300px;
+            font-size: 14px;
+        }
+
+        .mapboxgl-ctrl-geocoder input {
+            height: 40px;
+            padding: 8px 12px;
+        }
+
         @media (max-width: 768px) {
             .control-panel {
                 top: 10px;
                 right: 10px;
                 left: 10px;
                 min-width: auto;
+            }
+            
+            .mapboxgl-ctrl-geocoder {
+                min-width: 200px;
             }
         }
     </style>
@@ -225,6 +241,7 @@
         </div>
     </div>
 
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
     <script>
         // Global state for current date/time
         window.currentDate = new Date();
@@ -232,12 +249,12 @@
         // Mapbox access token
         mapboxgl.accessToken = 'pk.eyJ1IjoiaW9ub25ob3Byb2JsZW1pIiwiYSI6ImNtYnFvd3FzYzAxZ24ybHNkM2dkaW1kMHgifQ.-OzW5g8GVEnGhj3S5JMGdQ';
         
-        // Initialize map
+        // Initialize map centered on Ascoli Piceno, Italy
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v11',
-            center: [-74.006, 40.7128], // New York City
-            zoom: 15.5,
+            center: [13.574, 42.854], // Ascoli Piceno, Italy
+            zoom: 14,
             pitch: 45,
             bearing: -17.6,
             antialias: true
@@ -436,6 +453,16 @@ void main() {
         datePickerElement.value = today.toISOString().split('T')[0];
         window.currentDate = new Date(today);
 
+        // Centralized function to update shadows based on current map view
+        function updateShadows() {
+            if (map.loaded()) {
+                const { lng, lat } = map.getCenter();
+                const pos = SunCalc.getPosition(window.currentDate, lat, lng);
+                updateSunInfo(pos);
+                map.triggerRepaint();
+            }
+        }
+
         // Update time display
         function updateTimeDisplay() {
             const options = { 
@@ -469,9 +496,7 @@ void main() {
             selectedDate.setMinutes(Math.round((currentHour - Math.floor(currentHour)) * 60));
             window.currentDate = selectedDate;
             updateTimeDisplay();
-            if (map.loaded()) {
-                map.triggerRepaint();
-            }
+            updateShadows();
         });
 
         // Time slider change handler
@@ -480,9 +505,12 @@ void main() {
             window.currentDate.setHours(Math.floor(hour));
             window.currentDate.setMinutes(Math.round((hour - Math.floor(hour)) * 60));
             updateTimeDisplay();
-            if (map.loaded()) {
-                map.triggerRepaint();
-            }
+            updateShadows();
+        });
+
+        // Add event listener for map movement
+        map.on('moveend', function() {
+            updateShadows();
         });
 
         // Map load event
@@ -530,8 +558,27 @@ void main() {
             // Add custom shadow layer
             map.addLayer(new BuildingShadows());
             
-            // Initial time display update
+            // Add Mapbox Geocoder for city search
+            const geocoder = new MapboxGeocoder({
+                accessToken: mapboxgl.accessToken,
+                mapboxgl: mapboxgl,
+                marker: false,
+                placeholder: 'Search for cities...',
+                zoom: 14,
+                flyTo: {
+                    bearing: 0,
+                    speed: 2,
+                    curve: 1,
+                    easing: function (t) {
+                        return t;
+                    }
+                }
+            });
+            map.addControl(geocoder, 'top-left');
+            
+            // Initial updates
             updateTimeDisplay();
+            updateShadows();
         });
 
         // Handle map errors
