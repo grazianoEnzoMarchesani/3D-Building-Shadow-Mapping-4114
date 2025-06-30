@@ -38,9 +38,11 @@
             border-radius: 12px;
             padding: 20px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            min-width: 280px;
+            min-width: 300px;
             z-index: 1000;
             border: 1px solid rgba(255, 255, 255, 0.2);
+            max-height: 90vh;
+            overflow-y: auto;
         }
 
         .control-panel h3 {
@@ -87,10 +89,22 @@
             width: 100%;
             height: 8px;
             border-radius: 4px;
-            background: linear-gradient(to right, #2c3e50 0%, #f39c12 25%, #e74c3c 50%, #f39c12 75%, #2c3e50 100%);
             outline: none;
             -webkit-appearance: none;
             appearance: none;
+            transition: all 0.3s ease;
+        }
+
+        .time-slider {
+            background: linear-gradient(to right, #2c3e50 0%, #f39c12 25%, #e74c3c 50%, #f39c12 75%, #2c3e50 100%);
+        }
+
+        .opacity-slider {
+            background: linear-gradient(to right, rgba(170, 170, 170, 0.1) 0%, rgba(170, 170, 170, 1) 100%);
+        }
+
+        .shadow-opacity-slider {
+            background: linear-gradient(to right, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.9) 100%);
         }
 
         .control-group input[type="range"]::-webkit-slider-thumb {
@@ -141,6 +155,15 @@
             padding: 0 2px;
         }
 
+        .opacity-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #7f8c8d;
+            margin-top: 4px;
+            padding: 0 2px;
+        }
+
         .sun-info {
             background: rgba(255, 255, 255, 0.8);
             border-radius: 8px;
@@ -170,6 +193,31 @@
             z-index: 999;
         }
 
+        .section-divider {
+            border-top: 1px solid #e0e0e0;
+            margin: 20px 0 16px 0;
+        }
+
+        .section-title {
+            color: #2c3e50;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .opacity-value {
+            background: rgba(52, 152, 219, 0.1);
+            color: #3498db;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            float: right;
+        }
+
         /* Geocoder styling */
         .mapboxgl-ctrl-geocoder {
             min-width: 300px;
@@ -187,6 +235,7 @@
                 right: 10px;
                 left: 10px;
                 min-width: auto;
+                max-height: 80vh;
             }
             
             .mapboxgl-ctrl-geocoder {
@@ -210,7 +259,7 @@
         <div class="control-group">
             <label for="time-slider">Time of Day:</label>
             <div class="slider-container">
-                <input type="range" id="time-slider" min="0" max="23" value="12" step="0.5" />
+                <input type="range" id="time-slider" class="time-slider" min="0" max="23" value="12" step="0.5" />
                 <div class="hour-labels">
                     <span>00:00</span>
                     <span>06:00</span>
@@ -223,6 +272,44 @@
         
         <div class="time-display" id="time-display">
             October 26, 2023 - 12:00
+        </div>
+
+        <div class="section-divider"></div>
+        
+        <div class="section-title">
+            🏢 Building Appearance
+        </div>
+        
+        <div class="control-group">
+            <label for="building-opacity-slider">
+                Building Opacity 
+                <span class="opacity-value" id="building-opacity-value">60%</span>
+            </label>
+            <div class="slider-container">
+                <input type="range" id="building-opacity-slider" class="opacity-slider" min="10" max="100" value="60" step="5" />
+                <div class="opacity-labels">
+                    <span>10%</span>
+                    <span>30%</span>
+                    <span>60%</span>
+                    <span>100%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label for="shadow-opacity-slider">
+                Shadow Intensity 
+                <span class="opacity-value" id="shadow-opacity-value">60%</span>
+            </label>
+            <div class="slider-container">
+                <input type="range" id="shadow-opacity-slider" class="shadow-opacity-slider" min="10" max="90" value="60" step="5" />
+                <div class="opacity-labels">
+                    <span>10%</span>
+                    <span>30%</span>
+                    <span>60%</span>
+                    <span>90%</span>
+                </div>
+            </div>
         </div>
         
         <div class="sun-info" id="sun-info">
@@ -243,8 +330,10 @@
 
     <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
     <script>
-        // Global state for current date/time
+        // Global state for current date/time and opacity settings
         window.currentDate = new Date();
+        window.buildingOpacity = 0.6;
+        window.shadowOpacity = 0.6;
         
         // Mapbox access token
         mapboxgl.accessToken = 'pk.eyJ1IjoiaW9ub25ob3Byb2JsZW1pIiwiYSI6ImNtYnFvd3FzYzAxZ24ybHNkM2dkaW1kMHgifQ.-OzW5g8GVEnGhj3S5JMGdQ';
@@ -437,7 +526,7 @@ void main() {
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
                 gl.useProgram(this.opacityProgram);
                 gl.uniform1f(this.uAlt, pos.altitude);
-                gl.uniform4fv(this.shadeColor, new Float32Array([0, 0, 0, 0.6]))
+                gl.uniform4fv(this.shadeColor, new Float32Array([0, 0, 0, window.shadowOpacity]))
                 gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
                 gl.enableVertexAttribArray(this.aPos);
                 gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 0, 0);
@@ -450,11 +539,22 @@ void main() {
         const timeSliderElement = document.getElementById('time-slider');
         const timeDisplayElement = document.getElementById('time-display');
         const loadingElement = document.getElementById('loading');
+        const buildingOpacitySlider = document.getElementById('building-opacity-slider');
+        const shadowOpacitySlider = document.getElementById('shadow-opacity-slider');
+        const buildingOpacityValue = document.getElementById('building-opacity-value');
+        const shadowOpacityValue = document.getElementById('shadow-opacity-value');
 
         // Set initial date to today
         const today = new Date();
         datePickerElement.value = today.toISOString().split('T')[0];
         window.currentDate = new Date(today);
+
+        // Function to update building opacity
+        function updateBuildingOpacity() {
+            if (map.getLayer('3d-buildings')) {
+                map.setPaintProperty('3d-buildings', 'fill-extrusion-opacity', window.buildingOpacity);
+            }
+        }
 
         // Centralized function to update shadows based on current map view
         function updateShadows() {
@@ -511,6 +611,20 @@ void main() {
             updateShadows();
         });
 
+        // Building opacity slider handler
+        buildingOpacitySlider.addEventListener('input', function() {
+            window.buildingOpacity = parseFloat(this.value) / 100;
+            buildingOpacityValue.textContent = `${this.value}%`;
+            updateBuildingOpacity();
+        });
+
+        // Shadow opacity slider handler
+        shadowOpacitySlider.addEventListener('input', function() {
+            window.shadowOpacity = parseFloat(this.value) / 100;
+            shadowOpacityValue.textContent = `${this.value}%`;
+            updateShadows();
+        });
+
         // Add event listener for map movement
         map.on('moveend', function() {
             updateShadows();
@@ -554,7 +668,7 @@ void main() {
                         15.05,
                         ['get', 'min_height']
                     ],
-                    'fill-extrusion-opacity': 0.6
+                    'fill-extrusion-opacity': window.buildingOpacity
                 }
             }, labelLayerId);
 
@@ -581,6 +695,7 @@ void main() {
             
             // Initial updates
             updateTimeDisplay();
+            updateBuildingOpacity();
             updateShadows();
         });
 
