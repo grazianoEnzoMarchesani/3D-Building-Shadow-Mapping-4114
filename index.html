@@ -96,6 +96,7 @@
         }
 
         .time-slider {
+            /* Dynamic gradient will be set via JavaScript */
             background: linear-gradient(to right, #2c3e50 0%, #f39c12 25%, #e74c3c 50%, #f39c12 75%, #2c3e50 100%);
         }
 
@@ -144,6 +145,18 @@
             font-size: 14px;
             margin-top: 16px;
             box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+        }
+
+        .timezone-info {
+            background: rgba(52, 152, 219, 0.1);
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            border-radius: 6px;
+            padding: 8px;
+            margin-top: 8px;
+            font-size: 11px;
+            color: #2980b9;
+            text-align: center;
+            font-weight: 500;
         }
 
         .hour-labels {
@@ -218,6 +231,18 @@
             float: right;
         }
 
+        .light-intensity-info {
+            background: rgba(255, 235, 59, 0.1);
+            border: 1px solid rgba(255, 235, 59, 0.3);
+            border-radius: 6px;
+            padding: 8px;
+            margin-top: 8px;
+            font-size: 11px;
+            color: #f57f17;
+            text-align: center;
+            font-weight: 500;
+        }
+
         /* Geocoder styling */
         .mapboxgl-ctrl-geocoder {
             min-width: 300px;
@@ -257,7 +282,7 @@
         </div>
         
         <div class="control-group">
-            <label for="time-slider">Time of Day:</label>
+            <label for="time-slider">Local Time:</label>
             <div class="slider-container">
                 <input type="range" id="time-slider" class="time-slider" min="0" max="23" value="12" step="0.5" />
                 <div class="hour-labels">
@@ -267,6 +292,12 @@
                     <span>18:00</span>
                     <span>24:00</span>
                 </div>
+            </div>
+            <div class="timezone-info" id="timezone-info">
+                🌍 Timezone: UTC+0
+            </div>
+            <div class="light-intensity-info" id="light-intensity-info">
+                ☀️ Peak sunlight: 12:30 - 13:30
             </div>
         </div>
         
@@ -334,6 +365,8 @@
         window.currentDate = new Date();
         window.buildingOpacity = 0.6;
         window.shadowOpacity = 0.6;
+        window.currentTimezone = 'UTC+0';
+        window.timezoneOffset = 0; // in hours from UTC
         
         // Mapbox access token
         mapboxgl.accessToken = 'pk.eyJ1IjoiaW9ub25ob3Byb2JsZW1pIiwiYSI6ImNtYnFvd3FzYzAxZ24ybHNkM2dkaW1kMHgifQ.-OzW5g8GVEnGhj3S5JMGdQ';
@@ -351,6 +384,181 @@
             bearing: -17.6,
             antialias: true
         });
+
+        // Function to get timezone offset from coordinates
+        async function getTimezoneOffset(lat, lng) {
+            try {
+                // Create a date object for the calculation
+                const now = new Date();
+                const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+                
+                // Simple timezone calculation based on longitude
+                // More accurate would be to use a timezone API, but this works for most cases
+                const roughOffset = Math.round(lng / 15);
+                
+                // For better accuracy, we can use a more sophisticated calculation
+                // This is a simplified version - in a real app you'd want to use a proper timezone API
+                const timezoneOffset = Math.max(-12, Math.min(12, roughOffset));
+                
+                return {
+                    offset: timezoneOffset,
+                    name: `UTC${timezoneOffset >= 0 ? '+' : ''}${timezoneOffset}`
+                };
+            } catch (error) {
+                console.warn('Could not determine timezone, using UTC');
+                return { offset: 0, name: 'UTC+0' };
+            }
+        }
+
+        // Function to get local time at given coordinates
+        function getLocalTime(date, timezoneOffset) {
+            const localTime = new Date(date.getTime() + (timezoneOffset * 60 * 60 * 1000));
+            return localTime;
+        }
+
+        // Function to create dynamic time slider gradient based on sun position
+        function createTimeSliderGradient(date, lat, lng, timezoneOffset) {
+            const gradientStops = [];
+            
+            // Calculate sun position for each hour of the day in LOCAL time
+            for (let hour = 0; hour <= 24; hour += 0.5) {
+                // Create local time
+                const localDate = new Date(date);
+                localDate.setHours(Math.floor(hour));
+                localDate.setMinutes((hour % 1) * 60);
+                
+                // Convert to UTC for sun calculation
+                const utcDate = new Date(localDate.getTime() - (timezoneOffset * 60 * 60 * 1000));
+                
+                const pos = SunCalc.getPosition(utcDate, lat, lng);
+                const altitude = pos.altitude;
+                
+                // Convert altitude to light intensity (0-1)
+                let intensity = Math.max(0, Math.sin(altitude));
+                
+                // Create color based on intensity and time of day
+                let color;
+                if (altitude < -0.1) {
+                    // Night - deep blue/purple
+                    color = `rgb(${Math.floor(44 + intensity * 20)}, ${Math.floor(62 + intensity * 30)}, ${Math.floor(80 + intensity * 40)})`;
+                } else if (altitude < 0.1) {
+                    // Dawn/Dusk - orange/purple
+                    const duskFactor = (altitude + 0.1) / 0.2;
+                    color = `rgb(${Math.floor(180 + duskFactor * 75)}, ${Math.floor(80 + duskFactor * 100)}, ${Math.floor(120 - duskFactor * 80)})`;
+                } else {
+                    // Day - yellow to white based on intensity
+                    const dayIntensity = Math.min(1, intensity * 1.5);
+                    const r = Math.floor(255 - (1 - dayIntensity) * 100);
+                    const g = Math.floor(220 + dayIntensity * 35);
+                    const b = Math.floor(100 + dayIntensity * 155);
+                    color = `rgb(${r}, ${g}, ${b})`;
+                }
+                
+                const percentage = (hour / 24) * 100;
+                gradientStops.push(`${color} ${percentage.toFixed(1)}%`);
+            }
+            
+            return `linear-gradient(to right, ${gradientStops.join(', ')})`;
+        }
+
+        // Function to update light intensity info
+        function updateLightIntensityInfo(date, lat, lng, timezoneOffset) {
+            const lightInfo = document.getElementById('light-intensity-info');
+            
+            // Find peak sunlight hours in local time
+            let maxAltitude = -Math.PI;
+            let peakHour = 12;
+            
+            for (let hour = 6; hour <= 18; hour += 0.25) {
+                const localDate = new Date(date);
+                localDate.setHours(Math.floor(hour));
+                localDate.setMinutes((hour % 1) * 60);
+                
+                // Convert to UTC for sun calculation
+                const utcDate = new Date(localDate.getTime() - (timezoneOffset * 60 * 60 * 1000));
+                
+                const pos = SunCalc.getPosition(utcDate, lat, lng);
+                if (pos.altitude > maxAltitude) {
+                    maxAltitude = pos.altitude;
+                    peakHour = hour;
+                }
+            }
+            
+            // Get sunrise and sunset times in UTC, then convert to local
+            const utcDate = new Date(date.getTime() - (timezoneOffset * 60 * 60 * 1000));
+            const sunTimes = SunCalc.getTimes(utcDate, lat, lng);
+            
+            // Convert sunrise/sunset to local time
+            const sunriseLocal = sunTimes.sunrise ? new Date(sunTimes.sunrise.getTime() + (timezoneOffset * 60 * 60 * 1000)) : null;
+            const sunsetLocal = sunTimes.sunset ? new Date(sunTimes.sunset.getTime() + (timezoneOffset * 60 * 60 * 1000)) : null;
+            
+            // Format times
+            const formatTime = (date) => {
+                if (!date || isNaN(date.getTime())) return '--:--';
+                return date.toLocaleTimeString('en-US', { 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    hour12: false 
+                });
+            };
+            
+            const peakStart = Math.max(6, peakHour - 0.5);
+            const peakEnd = Math.min(18, peakHour + 0.5);
+            
+            const peakStartTime = `${Math.floor(peakStart).toString().padStart(2, '0')}:${Math.floor((peakStart % 1) * 60).toString().padStart(2, '0')}`;
+            const peakEndTime = `${Math.floor(peakEnd).toString().padStart(2, '0')}:${Math.floor((peakEnd % 1) * 60).toString().padStart(2, '0')}`;
+            
+            // Check if it's a valid sun day
+            if (maxAltitude > 0) {
+                lightInfo.innerHTML = `
+                    ☀️ Peak: ${peakStartTime} - ${peakEndTime} | 
+                    🌅 ${formatTime(sunriseLocal)} | 
+                    🌇 ${formatTime(sunsetLocal)}
+                `;
+            } else {
+                lightInfo.innerHTML = `🌙 Polar night - No direct sunlight today`;
+            }
+        }
+
+        // Function to update timezone info
+        function updateTimezoneInfo(timezoneOffset, timezoneName) {
+            const timezoneInfo = document.getElementById('timezone-info');
+            timezoneInfo.innerHTML = `🌍 Timezone: ${timezoneName}`;
+            window.currentTimezone = timezoneName;
+            window.timezoneOffset = timezoneOffset;
+        }
+
+        // Function to update time slider gradient
+        async function updateTimeSliderGradient() {
+            const { lng, lat } = map.getCenter();
+            
+            // Get timezone for current location
+            const timezone = await getTimezoneOffset(lat, lng);
+            updateTimezoneInfo(timezone.offset, timezone.name);
+            
+            const timeSlider = document.getElementById('time-slider');
+            const gradient = createTimeSliderGradient(window.currentDate, lat, lng, timezone.offset);
+            timeSlider.style.background = gradient;
+            
+            // Update light intensity info with timezone
+            updateLightIntensityInfo(window.currentDate, lat, lng, timezone.offset);
+        }
+
+        // Function to get current sun position considering timezone
+        function getCurrentSunPosition() {
+            const { lng, lat } = map.getCenter();
+            
+            // Get current local time from slider
+            const localHour = parseFloat(document.getElementById('time-slider').value);
+            const localDate = new Date(window.currentDate);
+            localDate.setHours(Math.floor(localHour));
+            localDate.setMinutes((localHour % 1) * 60);
+            
+            // Convert to UTC for sun calculation
+            const utcDate = new Date(localDate.getTime() - (window.timezoneOffset * 60 * 60 * 1000));
+            
+            return SunCalc.getPosition(utcDate, lat, lng);
+        }
 
         // Custom WebGL layer for building shadows
         class BuildingShadows {
@@ -481,8 +689,10 @@ void main() {
                 const coords = source.getVisibleCoordinates().reverse();
                 const buildingsLayer = map.getLayer('3d-buildings');
                 const context = this.map.painter.context;
-                const { lng, lat } = this.map.getCenter();
-                const pos = SunCalc.getPosition(window.currentDate, lat, lng);
+                
+                // Use timezone-aware sun position
+                const pos = getCurrentSunPosition();
+                
                 gl.uniform1f(this.uAltitude, pos.altitude);
                 gl.uniform1f(this.uAzimuth, pos.azimuth + 3 * Math.PI / 2);
                 map.setLight({
@@ -559,14 +769,13 @@ void main() {
         // Centralized function to update shadows based on current map view
         function updateShadows() {
             if (map.loaded()) {
-                const { lng, lat } = map.getCenter();
-                const pos = SunCalc.getPosition(window.currentDate, lat, lng);
+                const pos = getCurrentSunPosition();
                 updateSunInfo(pos);
                 map.triggerRepaint();
             }
         }
 
-        // Update time display
+        // Update time display with local time
         function updateTimeDisplay() {
             const options = { 
                 year: 'numeric', 
@@ -577,7 +786,7 @@ void main() {
             const hours = Math.floor(parseFloat(timeSliderElement.value));
             const minutes = Math.round((parseFloat(timeSliderElement.value) - hours) * 60);
             const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-            timeDisplayElement.textContent = `${dateStr} - ${timeStr}`;
+            timeDisplayElement.textContent = `${dateStr} - ${timeStr} (${window.currentTimezone})`;
         }
 
         // Update sun information in UI
@@ -599,6 +808,7 @@ void main() {
             selectedDate.setMinutes(Math.round((currentHour - Math.floor(currentHour)) * 60));
             window.currentDate = selectedDate;
             updateTimeDisplay();
+            updateTimeSliderGradient(); // Update gradient when date changes
             updateShadows();
         });
 
@@ -627,6 +837,7 @@ void main() {
 
         // Add event listener for map movement
         map.on('moveend', function() {
+            updateTimeSliderGradient(); // Update gradient when location changes
             updateShadows();
         });
 
@@ -696,6 +907,7 @@ void main() {
             // Initial updates
             updateTimeDisplay();
             updateBuildingOpacity();
+            updateTimeSliderGradient(); // Initialize gradient
             updateShadows();
         });
 
